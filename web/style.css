@@ -70,7 +70,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chat-title { background-image: none; }
 .title-wrap:hover .chat-title:not(:focus) { text-decoration: underline dotted var(--faint); text-underline-offset: 4px; }
 .chat-item .del:hover { color: var(--danger); background: var(--panel); }
-.sidebar-foot { border-top: 1px solid var(--line); padding-top: 10px; }
 
 /* ─── Buttons ─── */
 .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 7px 12px; cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background .12s, border-color .12s, transform .06s; }
