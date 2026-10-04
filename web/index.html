@@ -18,9 +18,7 @@
       <button class="btn primary wide" id="new-chat">+ New chat</button>
       <div class="section-label">Chats</div>
       <nav class="chat-list" id="chat-list"></nav>
-      <div class="sidebar-foot">
-        <button class="btn ghost wide" id="open-settings">⚙︎ Settings</button>
-      </div>
+      <button class="btn ghost wide" id="open-settings">⚙︎ Settings</button>
     </aside>
 
     <!-- Conversation -->
@@ -38,9 +36,14 @@
         </div>
       </header>
 
-      <section class="messages" id="messages" aria-live="polite">
-        <div class="empty" id="empty"></div>
-      </section>
+      <div class="message-stage t-skel" id="message-stage" data-state="loading">
+        <div class="chat-skeleton t-skel-skeleton is-pulsing" aria-hidden="true">
+          <div class="skeleton-message"><span class="skeleton-avatar"></span><div><span class="skeleton-name"></span><span class="skeleton-line"></span><span class="skeleton-line short"></span></div></div>
+          <div class="skeleton-message"><span class="skeleton-avatar"></span><div><span class="skeleton-name"></span><span class="skeleton-line short"></span></div></div>
+          <div class="skeleton-message"><span class="skeleton-avatar"></span><div><span class="skeleton-name"></span><span class="skeleton-line"></span><span class="skeleton-line short"></span></div></div>
+        </div>
+        <section class="messages t-skel-content" id="messages" aria-live="polite" aria-busy="true" aria-label="Messages"></section>
+      </div>
       <button class="jump" id="jump" hidden>new messages ↓</button>
 
       <div class="typing" id="typing"></div>
@@ -49,12 +52,17 @@
         <div class="controls">
           <button class="btn play" id="play">▶ Play</button>
           <button class="btn ghost" id="step" title="One more message">⏭ Step</button>
-          <select id="mode" title="Who talks when">
-            <option value="natural">Natural</option>
-            <option value="everyone">Everyone decides</option>
-            <option value="round_robin">Round robin</option>
-          </select>
-          <span class="mode-hint" id="mode-hint"></span>
+          <div class="mode-control">
+            <select id="mode" title="Who talks when">
+              <option value="natural">Natural</option>
+              <option value="everyone">Everyone decides</option>
+              <option value="round_robin">Round robin</option>
+            </select>
+            <div class="mode-help" id="mode-help">
+              <button class="mode-hint" id="mode-hint" type="button" aria-label="Turn mode info" aria-describedby="mode-tooltip" aria-controls="mode-tooltip" aria-expanded="false">ⓘ</button>
+              <div class="mode-tooltip" id="mode-tooltip" role="tooltip" hidden></div>
+            </div>
+          </div>
         </div>
         <div class="attachment" id="attachment" hidden></div>
         <form class="input-row" id="composer">

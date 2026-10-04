@@ -8,6 +8,7 @@ is slower.
 import io
 import os
 import re
+from functools import lru_cache
 
 from . import settings
 
@@ -31,6 +32,26 @@ def source_path(name):
         return None
     path = os.path.join(settings.MEDIA_DIR, name)
     return path if os.path.isfile(path) else None
+
+
+def dimensions(name):
+    path = thumbnail(name)
+    if not path or Image is None:
+        return None
+    try:
+        stat = os.stat(path)
+        return _dimensions(path, stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+
+
+@lru_cache(maxsize=2048)
+def _dimensions(path, modified, size):
+    try:
+        with Image.open(path) as im:
+            return im.size
+    except (OSError, ValueError):
+        return None
 
 
 def thumbnail(name):
