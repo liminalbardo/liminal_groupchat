@@ -5,3 +5,4 @@ httpx>=0.27
 pillow>=10       # thumbnails, and smaller images for vision models
 # optional: lets the AIs use !search
 ddgs
+requests>=2.31
