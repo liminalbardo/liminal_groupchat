@@ -97,6 +97,9 @@ function handle(ev) {
       Object.assign(state, { settings: ev.settings, chats: ev.chats, chat: ev.chat, running: ev.running });
       state.typing = new Set(ev.typing);
       renderAll(chatChanged);
+      $("#message-stage").classList.add("is-revealed");
+      $("#message-stage").dataset.state = "ready";
+      $("#messages").setAttribute("aria-busy", "false");
       onboarding();
       break;
     }
@@ -133,12 +136,7 @@ function renderAll(chatChanged) {
   renderMessages(chatChanged); renderTyping();
 }
 
-const initials = (name) => {
-  const words = (name || "?").replace(/[^\p{L}\p{N}. ]/gu, "").split(/\s+/).filter((w) => /^\p{L}/u.test(w));
-  if (!words.length) return "?";
-  return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
-};
-// A model's profile picture if it has one, else coloured initials
+// A model's profile picture if it has one, else its colour
 const avatarUrl = (model) => {
   const file = model && (state.settings.avatars || {})[model];
   return file ? `/avatars/${encodeURIComponent(file)}` : null;
@@ -147,7 +145,7 @@ const avatar = (name, color, model, cls = "avatar") => {
   const url = avatarUrl(model);
   return url
     ? el("div", { class: `${cls} has-pic`, style: `background:${color || "#868e96"}` }, el("img", { src: url, alt: "" }))
-    : el("div", { class: cls, style: `background:${color || "#868e96"}` }, initials(name));
+    : el("div", { class: cls, style: `background:${color || "#868e96"}`, "aria-label": name });
 };
 const timeOf = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const members = () => state.chat?.members || [];
@@ -333,11 +331,25 @@ function messageEl(msg, prev) {
     } else if (msg.status === "error") {
       body = el("div", { class: "image-card error" }, el("div", { class: "caption" }, `🎨 ${msg.prompt || "drawing"} — ${msg.text}`));
     } else {
-      const img = el("img", { src: `/thumbs/${msg.image}`, alt: msg.prompt || msg.text || "image", loading: "lazy", decoding: "async", onclick: () => zoom(`/media/${msg.image}`) });
-      img.addEventListener("load", () => stickToBottom());
+      const ratio = msg.image_width > 0 && msg.image_height > 0 ? `${msg.image_width} / ${msg.image_height}` : null;
+      const frame = el("div", { class: "image-frame t-skel", style: ratio ? `--image-ratio:${ratio}` : null, "data-state": "loading", "data-image": msg.image, "aria-busy": "true" });
+      const img = el("img", { width: msg.image_width, height: msg.image_height, alt: msg.prompt || msg.text || "image", loading: "lazy", decoding: "async", onclick: () => zoom(`/media/${msg.image}`) });
+      const reveal = () => {
+        frame.classList.add("is-revealed");
+        frame.dataset.state = "ready";
+        frame.setAttribute("aria-busy", "false");
+      };
+      const content = el("div", { class: "t-skel-content" }, img);
+      img.addEventListener("load", reveal, { once: true });
+      img.addEventListener("error", () => {
+        content.replaceChildren(el("span", { class: "image-unavailable", role: "status" }, "Image unavailable"));
+        reveal();
+      }, { once: true });
+      frame.append(el("div", { class: "t-skel-skeleton is-pulsing", "aria-hidden": "true" }, el("div", { class: "image-placeholder" })), content);
+      img.src = `/thumbs/${msg.image}`;
       const caption = msg.prompt ? el("div", { class: "caption" }, msg.prompt)
         : msg.text ? el("div", { class: "caption", html: format(msg.text) }) : null;
-      body = el("div", { class: "image-card" }, img, caption);
+      body = el("div", { class: "image-card" }, frame, caption);
     }
   } else {
     body = el("div", { class: "bubble", html: format(msg.text) });
@@ -365,8 +377,20 @@ function messageEl(msg, prev) {
 const WINDOW = 80;
 state.shown = WINDOW;
 
+function keyedMessageEl(msg, prev, old) {
+  const key = JSON.stringify([state.chat?.id, msg, isGrouped(msg, prev), members(), state.settings.username, state.settings.avatars]);
+  if (old?.renderKey === key) return old;
+  const node = messageEl(msg, prev);
+  const oldFrame = old && $(".image-frame", old);
+  const newFrame = $(".image-frame", node);
+  if (oldFrame && newFrame && oldFrame.dataset.image === msg.image) newFrame.replaceWith(oldFrame);
+  node.renderKey = key;
+  return node;
+}
+
 function renderMessages(scrollToEnd = true) {
   const box = $("#messages");
+  const previous = new Map(msgEls);
   msgEls.clear();
   const all = (state.chat?.messages || []).filter(visible);
   const start = Math.max(0, all.length - state.shown);
@@ -376,7 +400,7 @@ function renderMessages(scrollToEnd = true) {
   }
   let prev = start > 0 ? all[start - 1] : null;
   for (const msg of all.slice(start)) {
-    const node = messageEl(msg, prev);
+    const node = keyedMessageEl(msg, prev, previous.get(msg.id));
     msgEls.set(msg.id, node);
     nodes.push(node);
     prev = msg;
@@ -419,7 +443,7 @@ function upsertMessage(msg) {
     const old = msgEls.get(msg.id);
     if (old && visible(msg)) {
       const prev = list.slice(0, i).filter(visible).pop();
-      const node = messageEl(msg, prev);
+      const node = keyedMessageEl(msg, prev, old);
       old.replaceWith(node);
       msgEls.set(msg.id, node);
     } else if (visible(msg) && list.length - i <= state.shown) {
@@ -432,8 +456,10 @@ function upsertMessage(msg) {
     const box = $("#messages");
     $(".empty", box)?.remove();
     const prev = list.slice(0, -1).filter(visible).pop();
-    const node = messageEl(msg, prev);
+    const node = keyedMessageEl(msg, prev);
     msgEls.set(msg.id, node);
+    node.classList.add("is-new");
+    node.addEventListener("animationend", () => node.classList.remove("is-new"), { once: true });
     box.append(node);
     if (!atBottom && msg.author !== "human") $("#jump").hidden = false;
   }
@@ -467,7 +493,7 @@ function renderTyping() {
   box.replaceChildren(
     el("span", { class: "faces" }, ...who.map((m) => avatarUrl(m.model)
       ? el("span", { class: "has-pic" }, el("img", { src: avatarUrl(m.model), alt: "" }))
-      : el("span", { style: `background:${m.color}` }, initials(m.name)))),
+      : el("span", { style: `background:${m.color}`, "aria-label": m.name }))),
     el("span", {}, label), el("span", { class: "dots" }, el("i"), el("i"), el("i")));
 }
 

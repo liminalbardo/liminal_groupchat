@@ -81,7 +81,7 @@ class Engine:
             "type": "snapshot",
             "settings": settings.public(),
             "chats": store.list_chats(),
-            "chat": self.chat,
+            "chat": {**self.chat, "messages": [self._message_for_ui(m) for m in self.chat["messages"]]} if self.chat else None,
             "running": self.running,
             "typing": sorted(self.typing),
         }
@@ -90,7 +90,15 @@ class Engine:
         self.emit(self.snapshot())
 
     def _emit_message(self, msg):
-        self.emit({"type": "message", "message": msg})
+        self.emit({"type": "message", "message": self._message_for_ui(msg)})
+
+    @staticmethod
+    def _message_for_ui(msg):
+        if msg.get("kind") == "image" and msg.get("image"):
+            size = images.dimensions(msg["image"])
+            if size:
+                return {**msg, "image_width": size[0], "image_height": size[1]}
+        return msg
 
     def _emit_status(self):
         self.emit({"type": "status", "running": self.running,
