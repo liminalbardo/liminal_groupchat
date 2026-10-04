@@ -52,12 +52,17 @@
         <div class="controls">
           <button class="btn play" id="play">▶ Play</button>
           <button class="btn ghost" id="step" title="One more message">⏭ Step</button>
-          <select id="mode" title="Who talks when">
-            <option value="natural">Natural</option>
-            <option value="everyone">Everyone decides</option>
-            <option value="round_robin">Round robin</option>
-          </select>
-          <span class="mode-hint" id="mode-hint"></span>
+          <div class="mode-control">
+            <select id="mode" title="Who talks when">
+              <option value="natural">Natural</option>
+              <option value="everyone">Everyone decides</option>
+              <option value="round_robin">Round robin</option>
+            </select>
+            <div class="mode-help" id="mode-help">
+              <button class="mode-hint" id="mode-hint" type="button" aria-label="Turn mode info" aria-describedby="mode-tooltip" aria-controls="mode-tooltip" aria-expanded="false">ⓘ</button>
+              <div class="mode-tooltip" id="mode-tooltip" role="tooltip" hidden></div>
+            </div>
+          </div>
         </div>
         <div class="attachment" id="attachment" hidden></div>
         <form class="input-row" id="composer">

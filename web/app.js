@@ -227,7 +227,7 @@ function renderControls() {
   $("#step").disabled = state.running;
   const mode = state.chat?.settings.mode || "natural";
   $("#mode").value = mode;
-  $("#mode-hint").textContent = MODE_HINTS[mode] || "";
+  $("#mode-tooltip").textContent = MODE_HINTS[mode] || "";
 }
 
 function renderMembers() {
@@ -903,6 +903,21 @@ function wire() {
   $("#play").onclick = () => api("POST", `/api/control/${state.running ? "pause" : "play"}`);
   $("#step").onclick = () => api("POST", "/api/control/step");
   $("#mode").onchange = (e) => api("PATCH", "/api/chat", { settings: { mode: e.target.value } });
+  const help = $("#mode-help"), info = $("#mode-hint"), tooltip = $("#mode-tooltip");
+  let infoPinned = false;
+  const showInfo = (open) => {
+    tooltip.hidden = !open;
+    info.setAttribute("aria-expanded", String(open));
+  };
+  help.onmouseenter = () => showInfo(true);
+  help.onmouseleave = () => { if (!infoPinned && document.activeElement !== info) showInfo(false); };
+  info.onfocus = () => showInfo(true);
+  info.onblur = () => { infoPinned = false; showInfo(false); };
+  info.onclick = () => { infoPinned = !infoPinned; showInfo(infoPinned); };
+  info.onkeydown = (e) => { if (e.key === "Escape") { infoPinned = false; showInfo(false); } };
+  document.addEventListener("click", (e) => {
+    if (!help.contains(e.target)) { infoPinned = false; showInfo(false); }
+  });
 
   const title = $("#chat-title");
   title.addEventListener("keydown", (e) => { if (e.key === "Enter") title.blur(); if (e.key === "Escape") { title.value = state.chat.title; title.blur(); } });
