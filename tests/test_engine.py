@@ -31,13 +31,15 @@ class Script:
         self.no_tools = set()  # models that refuse web tools
 
     async def __call__(self, model, messages, temperature=1.0, max_tokens=4000, on_delta=None,
-                       web=False, sources=None):
+                       web=False, sources=None, web_uses=None):
         if web and model in self.no_tools:
             raise llm.LLMError("No endpoints found that support tool use")
         self.calls.append((model, messages))
         self.web.append(web)
         if web and sources is not None:
             sources.extend(self.found.get(model, []))
+        if web and web_uses is not None and model in self.found:
+            web_uses["searches"] = 2
         queue = self.replies.get(model) or []
         text = queue.pop(0) if queue else self.default
         shown = ""
@@ -920,6 +922,14 @@ def test_web_access():
     plain_ctx = json_dump(by_model["a/plain"][-1][0])
     assert "real web access" in web_sys and "real web access" not in json_dump(by_model["a/plain"][0][0][0])
     assert "(sources: https://example.org/ocean)" in plain_ctx, "others can check what was read"
+    assert reply["web_uses"] == {"searches": 2}
+    own_ctx = by_model["a/web"][-1][0]
+    i = next(i for i, m in enumerate(own_ctx) if m["role"] == "assistant" and "70% of earth" in json_dump(m["content"]))
+    receipt = own_ctx[i + 1]
+    assert receipt["role"] == "user" and receipt["content"].startswith(
+        "[web receipt for your message above: you really used the web (searched 2 times). "
+        "pages you cited: Ocean facts (https://example.org/ocean)"), "authors see proof of their own searches"
+    assert "web receipt" not in plain_ctx, "receipts are only for the author"
 
 
 def test_stream_chat_sends_web_tools_and_collects_citations():
@@ -931,7 +941,7 @@ def test_stream_chat_sends_web_tools_and_collects_citations():
             {"type": "url_citation", "url_citation": {"url": "https://a.example/x", "title": "A"}},
             {"type": "url_citation", "url_citation": {"url": "https://a.example/x", "title": "A"}},
             {"type": "url_citation", "url_citation": {"url": "javascript:alert(1)"}}]}}],
-         "usage": {"cost": 0.02}},
+         "usage": {"cost": 0.02, "server_tool_use": {"web_search_requests": 2, "web_fetch_requests": 1}}},
     ]
 
     def handler(request):
@@ -942,12 +952,13 @@ def test_stream_chat_sends_web_tools_and_collects_citations():
     real_client = httpx.AsyncClient
     httpx.AsyncClient = lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)
     try:
-        sources = []
+        sources, uses = [], {}
         text, cost = asyncio.run(REAL_STREAM_CHAT("a/m", [{"role": "user", "content": "hi"}],
-                                                  web=True, sources=sources))
+                                                  web=True, sources=sources, web_uses=uses))
         asyncio.run(REAL_STREAM_CHAT("a/m", [{"role": "user", "content": "hi"}]))
     finally:
         httpx.AsyncClient = real_client
     assert text == "found it here" and cost == 0.02
     assert sources == [{"url": "https://a.example/x", "title": "A"}], "deduped, http(s) only"
+    assert uses == {"searches": 2, "fetches": 1}
     assert "tools" not in seen["body"], "no web tools unless asked"

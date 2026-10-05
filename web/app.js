@@ -357,8 +357,10 @@ function messageEl(msg, prev) {
         !human && (m?.model || msg.model) ? el("span", { class: "model" }, shortModel(m?.model || msg.model)) : null,
         el("span", { class: "time", title: new Date(msg.ts * 1000).toLocaleString() }, timeOf(msg.ts))),
       whisperTag, body,
-      msg.sources?.length ? el("div", { class: "sources" }, "🌐", ...msg.sources.map((s) =>
-        el("a", { href: s.url, target: "_blank", rel: "noopener noreferrer", title: s.title || s.url }, hostOf(s.url)))) : null,
+      msg.sources?.length || msg.web_uses ? el("div", { class: "sources", title: webUsesText(msg.web_uses) },
+        "🌐", ...(msg.sources?.length ? msg.sources.map((s) =>
+          el("a", { href: s.url, target: "_blank", rel: "noopener noreferrer", title: s.title || s.url }, hostOf(s.url)))
+          : [webUsesText(msg.web_uses)])) : null,
       reactions.length ? el("div", { class: "reactions" }, ...reactions.map(([emoji, who]) =>
         el("span", { class: "reaction", title: who.join(", ") }, emoji, who.length > 1 ? el("b", {}, who.length) : null))) : null,
     ));
@@ -610,6 +612,12 @@ async function loadModels() {
 
 const price = (m) => m.input == null ? "" : (m.input === 0 && m.output === 0) ? "free"
   : `$${m.input} in · $${m.output} out`;
+
+function webUsesText(uses) {
+  if (!uses) return "";
+  const n = (k, word) => (uses[k] ? `${word} ${uses[k]}×` : "");
+  return [n("searches", "searched"), n("fetches", "opened pages")].filter(Boolean).join(", ");
+}
 
 function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }

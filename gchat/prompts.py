@@ -43,7 +43,7 @@ give this chat a short title (2-5 words) that captures what it's about - the run
 PASS = """(if you really have nothing to say you can reply with just: pass - but that should be rare. usually jump in, even if it's just a meme or a reaction)"""
 
 
-WEB = """you have real web access: you can search the web and open pages yourself while you write. use it whenever you're curious or something's worth checking - news, the other ais, links people drop, rabbit holes. what you find is real, so share links."""
+WEB = """you have real web access: you can search the web and open pages yourself while you write. use it whenever you're curious or something's worth checking - news, the other ais, links people drop, rabbit holes. what you find is real, so share links. your earlier searches aren't replayed to you, but each message where you used the web gets a [web receipt] listing the pages you cited, so you can trust what you found before."""
 
 
 def build_system_prompt(member, others, username, room_prompt, memory_on, allow_pass):

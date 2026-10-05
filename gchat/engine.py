@@ -722,7 +722,30 @@ class Engine:
                 out[-1]["content"] = self._merge(out[-1]["content"], content)
             else:
                 out.append({"role": role, "content": content})
+            receipt = self._web_receipt(msg) if role == "assistant" else ""
+            if receipt:
+                # The web searches ran inside the API call, so they aren't in
+                # the history: without this, a model sees its own findings and
+                # nothing behind them, and decides it made them up.
+                out.append({"role": "user", "content": receipt})
         return out
+
+    @staticmethod
+    def _web_receipt(msg):
+        sources, uses = msg.get("sources") or [], msg.get("web_uses") or {}
+        if not sources and not uses:
+            return ""
+        did = []
+        if uses.get("searches"):
+            did.append(f"searched {uses['searches']} time{'s' if uses['searches'] > 1 else ''}")
+        if uses.get("fetches"):
+            did.append(f"opened {uses['fetches']} page{'s' if uses['fetches'] > 1 else ''}")
+        text = "[web receipt for your message above: you really used the web"
+        text += f" ({', '.join(did)})" if did else ""
+        if sources:
+            text += ". pages you cited: " + "; ".join(
+                f"{s['title']} ({s['url']})" if s.get("title") else s["url"] for s in sources[:5])
+        return text + "]"
 
     def _build_messages(self, member, allow_pass, images=True):
         others = [m for m in self.chat["members"] if m["id"] != member["id"]]
@@ -848,15 +871,16 @@ class Engine:
                 msg["text"] = shown
                 self.emit({"type": "delta", "id": msg["id"], "text": shown})
 
-        sources = []
+        sources, web_uses = [], {}
         web = bool(member.get("web")) and member["model"] not in self.no_web
 
         async def call(messages):
             sources.clear()
+            web_uses.clear()
             return await asyncio.wait_for(
                 llm.stream_chat(member["model"], messages,
                                 temperature=float(member.get("temperature", 1.0)),
-                                on_delta=on_delta, web=web, sources=sources),
+                                on_delta=on_delta, web=web, sources=sources, web_uses=web_uses),
                 REPLY_TIMEOUT)
 
         try:
@@ -907,6 +931,8 @@ class Engine:
             msg.update(text=cleaned, status="done", cost=round(cost, 6))
             if sources:
                 msg["sources"] = sources[:8]
+            if web_uses:
+                msg["web_uses"] = dict(web_uses)
             self._emit_message(msg)
             posted = True
         elif msg:

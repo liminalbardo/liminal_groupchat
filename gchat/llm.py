@@ -65,12 +65,25 @@ def _add_sources(sources, annotations):
             sources.append({"url": url, "title": (cite.get("title") or "").strip()[:120]})
 
 
+def _count_web_uses(usage, counts):
+    """Searches and page fetches a reply made, where usage reports them."""
+    for key, value in (usage or {}).items():
+        if isinstance(value, dict):
+            _count_web_uses(value, counts)
+        elif isinstance(value, int) and value > 0:
+            if "web_search" in key:
+                counts["searches"] = max(counts.get("searches", 0), value)
+            elif "web_fetch" in key:
+                counts["fetches"] = max(counts.get("fetches", 0), value)
+
+
 async def stream_chat(model, messages, temperature=1.0, max_tokens=4000, on_delta=None,
-                      web=False, sources=None):
+                      web=False, sources=None, web_uses=None):
     """Stream one reply. Calls `await on_delta(full_text_so_far)` as text arrives.
 
     With `web`, the model can search the web and open pages while it writes;
-    pages it cites are appended to `sources` as {"url", "title"}.
+    pages it cites are appended to `sources` as {"url", "title"}, and
+    `web_uses` gets {"searches": n, "fetches": n} where usage reports them.
     Returns (text, cost_in_usd).
     """
     payload = {
@@ -107,6 +120,8 @@ async def stream_chat(model, messages, temperature=1.0, max_tokens=4000, on_delt
                 if chunk.get("error"):
                     raise LLMError(str(chunk["error"].get("message", chunk["error"]))[:300])
                 usage = chunk.get("usage") or {}
+                if web and web_uses is not None:
+                    _count_web_uses(usage, web_uses)
                 if usage.get("cost") is not None:
                     cost = float(usage["cost"])
                 for choice in chunk.get("choices") or []:
