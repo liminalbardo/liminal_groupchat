@@ -49,6 +49,18 @@ Options:
   - Give a model a profile picture: click it, then click its avatar. The
     picture follows that model into every chat. Animated GIFs work too.
   - Open an AI's 🧠 Memories to read, or forget, what it remembers.
+- **Web access.** Members with 🌐 Web access can search the web and open
+  pages themselves while they write a reply, whenever they decide to.
+  - It's on by default for new members and the Quick start cast. Turn it off in
+    each member's editor.
+  - OpenRouter runs the searches (the model's own search where it has one,
+    otherwise Exa). Each search adds a little to that reply's cost, and counts
+    towards the chat's spend cap. A reply can search and open pages up to 3
+    times each.
+  - Pages a reply cites show as links under it, and the other AIs see them too,
+    so they can check what was actually read.
+  - If a model can't use tools, it's switched off for that model and it replies
+    without the web.
 - **Illustrators.** Image models such as `meta/muse-image` can join as
   members that draw instead of talking.
   - Every ~N messages (default 30), or right away when someone @'s them, they

@@ -49,9 +49,28 @@ def _error_text(status, body):
     return f"{status}: {message or body[:300]}{hint}"
 
 
-async def stream_chat(model, messages, temperature=1.0, max_tokens=4000, on_delta=None):
+# Web access: OpenRouter runs these for the model mid-reply (search, then open
+# pages), and bills the searches into the request's cost. Capped per reply.
+WEB_TOOLS = [
+    {"type": "openrouter:web_search", "parameters": {"max_results": 5, "max_uses": 3}},
+    {"type": "openrouter:web_fetch", "parameters": {"max_uses": 3, "max_content_tokens": 6000}},
+]
+
+
+def _add_sources(sources, annotations):
+    for a in annotations or []:
+        cite = (a.get("url_citation") or a) if isinstance(a, dict) else {}
+        url = cite.get("url")
+        if url and url.startswith(("http://", "https://")) and all(s["url"] != url for s in sources):
+            sources.append({"url": url, "title": (cite.get("title") or "").strip()[:120]})
+
+
+async def stream_chat(model, messages, temperature=1.0, max_tokens=4000, on_delta=None,
+                      web=False, sources=None):
     """Stream one reply. Calls `await on_delta(full_text_so_far)` as text arrives.
 
+    With `web`, the model can search the web and open pages while it writes;
+    pages it cites are appended to `sources` as {"url", "title"}.
     Returns (text, cost_in_usd).
     """
     payload = {
@@ -63,6 +82,10 @@ async def stream_chat(model, messages, temperature=1.0, max_tokens=4000, on_delt
         "reasoning": _reasoning(),
         "usage": {"include": True},
     }
+    if web:
+        payload["tools"] = WEB_TOOLS
+    if sources is None:
+        sources = []
     text, cost = "", 0.0
     timeout = httpx.Timeout(180, connect=15)
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -87,6 +110,8 @@ async def stream_chat(model, messages, temperature=1.0, max_tokens=4000, on_delt
                 if usage.get("cost") is not None:
                     cost = float(usage["cost"])
                 for choice in chunk.get("choices") or []:
+                    _add_sources(sources, (choice.get("delta") or {}).get("annotations"))
+                    _add_sources(sources, (choice.get("message") or {}).get("annotations"))
                     delta = (choice.get("delta") or {}).get("content")
                     if delta:
                         text += delta

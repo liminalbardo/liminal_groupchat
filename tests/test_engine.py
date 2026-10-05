@@ -1,6 +1,7 @@
 """Engine tests with a scripted model. Run: python -m pytest tests  (or python tests/test_engine.py)"""
 
 import asyncio
+import json
 import os
 import random
 import shutil
@@ -15,6 +16,9 @@ os.environ["GROUPCHAT_DATA_DIR"] = TMP
 from gchat import commands, engine as engine_mod, llm, settings, store  # noqa: E402
 
 
+REAL_STREAM_CHAT = llm.stream_chat
+
+
 class Script:
     """Stands in for llm.stream_chat: replies come from a per-model queue."""
 
@@ -22,9 +26,18 @@ class Script:
         self.replies = replies or {}
         self.default = default
         self.calls = []
+        self.web = []          # the web flag of each call
+        self.found = {}        # model -> sources a web reply cites
+        self.no_tools = set()  # models that refuse web tools
 
-    async def __call__(self, model, messages, temperature=1.0, max_tokens=4000, on_delta=None):
+    async def __call__(self, model, messages, temperature=1.0, max_tokens=4000, on_delta=None,
+                       web=False, sources=None):
+        if web and model in self.no_tools:
+            raise llm.LLMError("No endpoints found that support tool use")
         self.calls.append((model, messages))
+        self.web.append(web)
+        if web and sources is not None:
+            sources.extend(self.found.get(model, []))
         queue = self.replies.get(model) or []
         text = queue.pop(0) if queue else self.default
         shown = ""
@@ -728,22 +741,23 @@ def test_backrooms_style_vote_starts_a_poll():
 
 
 def test_date_and_time_awareness():
-    import time as _time
     eng, _ = fresh(Script())
     one = eng.add_member("a/one", "One")
     eng.chat["messages"] = []
+    from datetime import datetime, timedelta
+    # Anchored to yesterday afternoon, so the 3-hour gap never crosses midnight
+    base = (datetime.now() - timedelta(days=1)).replace(hour=15, minute=0, second=0, microsecond=0).timestamp()
     old = eng._new_message("text", "human", "gm")
-    old["ts"] = _time.time() - 26 * 3600      # yesterday
+    old["ts"] = base - 26 * 3600      # the day before
     later = eng._new_message("text", "human", "back again")
-    later["ts"] = _time.time() - 3 * 3600
-    eng._new_message("text", "human", "still here")
+    later["ts"] = base - 3 * 3600
+    eng._new_message("text", "human", "still here")["ts"] = base
     msgs = eng._build_messages(one, allow_pass=False)
     assert "now:" not in msgs[0]["content"], "no clock in the system prompt (keeps it cacheable)"
     assert msgs[-1]["content"].rstrip().endswith("]") and "[now: " in msgs[-1]["content"]
     import json
     flat = json.dumps(msgs, ensure_ascii=False)
-    assert "[— 3 hours later —]" in flat or "[— 2 hours later —]" in flat
-    from datetime import datetime
+    assert "[— 3 hours later —]" in flat
     day = datetime.fromtimestamp(later["ts"])
     if datetime.fromtimestamp(old["ts"]).date() != day.date():
         assert f"[— {day.strftime('%A')} {day.day} {day.strftime('%B')} —]" in flat
@@ -876,3 +890,64 @@ def test_bluesky_command():
     assert notice.startswith('🦋 you searched "cats" on Bluesky')
     assert "cats are liquid" in json_dump(script.calls[0][1]), "the next speaker sees the posts"
     assert commands.parse('!bluesky "@cat"')[1][0].action == "bsky"
+
+
+def test_web_access():
+    async def go():
+        script = Script(default="the ocean is 70% of earth")
+        script.found["a/web"] = [{"url": "https://example.org/ocean", "title": "Ocean facts"}]
+        script.no_tools.add("a/old")
+        eng, _ = fresh(script)
+        web = eng.add_member("a/web", "Web", web=True)
+        eng.add_member("a/plain", "Plain")
+        old = eng.add_member("a/old", "Old", web=True)
+        eng.update_chat(chat_settings={"mode": "round_robin", "pace": 0, "messages_per_play": 4})
+        eng.play()
+        await drain(eng)
+        return eng, script, web, old
+    eng, script, web, old = run(go())
+    reply = next(m for m in eng.chat["messages"] if m.get("author") == web["id"] and m["kind"] == "text")
+    assert reply["sources"] == [{"url": "https://example.org/ocean", "title": "Ocean facts"}]
+    assert any(c[0] == "a/web" for c in script.calls)
+    by_model = {}
+    for (model, msgs), w in zip(script.calls, script.web):
+        by_model.setdefault(model, []).append((msgs, w))
+    assert all(w for _, w in by_model["a/web"]) and not any(w for _, w in by_model["a/plain"])
+    assert by_model["a/old"] and not by_model["a/old"][0][1], "a model that refuses tools replies without them"
+    assert "a/old" in eng.no_web
+    assert any("can't use web access" in m["text"] for m in eng.chat["messages"])
+    web_sys = by_model["a/web"][0][0][0]["content"]
+    plain_ctx = json_dump(by_model["a/plain"][-1][0])
+    assert "real web access" in web_sys and "real web access" not in json_dump(by_model["a/plain"][0][0][0])
+    assert "(sources: https://example.org/ocean)" in plain_ctx, "others can check what was read"
+
+
+def test_stream_chat_sends_web_tools_and_collects_citations():
+    import httpx
+    seen = {}
+    chunks = [
+        {"choices": [{"delta": {"content": "found it "}}]},
+        {"choices": [{"delta": {"content": "here", "annotations": [
+            {"type": "url_citation", "url_citation": {"url": "https://a.example/x", "title": "A"}},
+            {"type": "url_citation", "url_citation": {"url": "https://a.example/x", "title": "A"}},
+            {"type": "url_citation", "url_citation": {"url": "javascript:alert(1)"}}]}}],
+         "usage": {"cost": 0.02}},
+    ]
+
+    def handler(request):
+        seen["body"] = json.loads(request.content)
+        body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+        return httpx.Response(200, text=body)
+
+    real_client = httpx.AsyncClient
+    httpx.AsyncClient = lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)
+    try:
+        sources = []
+        text, cost = asyncio.run(REAL_STREAM_CHAT("a/m", [{"role": "user", "content": "hi"}],
+                                                  web=True, sources=sources))
+        asyncio.run(REAL_STREAM_CHAT("a/m", [{"role": "user", "content": "hi"}]))
+    finally:
+        httpx.AsyncClient = real_client
+    assert text == "found it here" and cost == 0.02
+    assert sources == [{"url": "https://a.example/x", "title": "A"}], "deduped, http(s) only"
+    assert "tools" not in seen["body"], "no web tools unless asked"

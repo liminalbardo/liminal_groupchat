@@ -58,6 +58,7 @@ class Engine:
         self.since_memory = 0
         self.tool_tasks = set()      # images and searches still running
         self.no_vision = set()       # models that turned out not to take images
+        self.no_web = set()          # models that turned out not to take web tools
         self._image_data = {}        # filename -> data URL, so files are read once
         self.memory = IdentityMemory(complete_fn=self._memory_complete)
         self.memory.set_scenario(settings.MEMORY_SCENARIO)
@@ -268,11 +269,11 @@ class Engine:
     def member(self, member_id):
         return next((m for m in self.chat["members"] if m["id"] == member_id), None)
 
-    def add_member(self, model, name, temperature=1.0, illustrator=None, draw_every=30):
+    def add_member(self, model, name, temperature=1.0, illustrator=None, draw_every=30, web=False):
         name = (name or model.split("/")[-1]).strip()[:40]
         if illustrator is None:
             illustrator = llm.is_image_model(model)
-        member = store.new_member(self.chat, model, name, temperature, illustrator, draw_every)
+        member = store.new_member(self.chat, model, name, temperature, illustrator, draw_every, web)
         self.chat["members"].append(member)
         self._notice(f"{name} joined the chat")
         self._save()
@@ -283,7 +284,7 @@ class Engine:
         member = self.member(member_id)
         if not member:
             return
-        for key in ("name", "temperature", "muted", "model", "color", "illustrator", "draw_every"):
+        for key in ("name", "temperature", "muted", "model", "color", "illustrator", "draw_every", "web"):
             if key in values:
                 member[key] = values[key]
         self._save()
@@ -706,6 +707,9 @@ class Engine:
                     out[-1]["content"] = self._merge(out[-1]["content"], gap)
                 else:
                     out.append({"role": "user", "content": gap})
+            if msg.get("sources") and role == "user":
+                # Others can check what was read, not just what was claimed
+                text += "  (sources: " + " ".join(s["url"] for s in msg["sources"][:5]) + ")"
             reactions = msg.get("reactions") or {}
             if reactions:
                 text += "  (reactions: " + ", ".join(
@@ -844,24 +848,37 @@ class Engine:
                 msg["text"] = shown
                 self.emit({"type": "delta", "id": msg["id"], "text": shown})
 
+        sources = []
+        web = bool(member.get("web")) and member["model"] not in self.no_web
+
         async def call(messages):
+            sources.clear()
             return await asyncio.wait_for(
                 llm.stream_chat(member["model"], messages,
                                 temperature=float(member.get("temperature", 1.0)),
-                                on_delta=on_delta),
+                                on_delta=on_delta, web=web, sources=sources),
                 REPLY_TIMEOUT)
 
         try:
             try:
                 text, cost = await call(messages)
             except llm.LLMError as e:
-                if not has_images or msg is not None or not re.search(
+                if web and msg is None and re.search(r"\btools?\b|tool[ _]use|function", str(e), re.IGNORECASE):
+                    # This model (or its providers) can't take tools: reply without the web
+                    print(f"[Web] {member['model']} can't use web tools ({e}); replying without")
+                    self.no_web.add(member["model"])
+                    self._notice(f"{member['name']} can't use web access on this model, so it's off for now",
+                                 private=True)
+                    web = False
+                    text, cost = await call(messages)
+                elif has_images and msg is None and re.search(
                         r"image|vision|modalit", str(e), re.IGNORECASE):
+                    # Some models won't take images: remember that, resend as text
+                    print(f"[Images] {member['model']} refused images ({e}); retrying without")
+                    self.no_vision.add(member["model"])
+                    text, cost = await call(self._build_messages(member, allow_pass, images=False))
+                else:
                     raise
-                # Some models won't take images: remember that, resend as text
-                print(f"[Images] {member['model']} refused images ({e}); retrying without")
-                self.no_vision.add(member["model"])
-                text, cost = await call(self._build_messages(member, allow_pass, images=False))
         except Exception as e:
             if msg:
                 self._remove_message(msg)
@@ -888,6 +905,8 @@ class Engine:
             if msg is None:
                 msg = self._new_message("text", member["id"], cleaned)
             msg.update(text=cleaned, status="done", cost=round(cost, 6))
+            if sources:
+                msg["sources"] = sources[:8]
             self._emit_message(msg)
             posted = True
         elif msg:

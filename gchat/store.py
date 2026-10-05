@@ -41,7 +41,7 @@ def new_chat(title="new chat"):
     }
 
 
-def new_member(chat, model, name, temperature=1.0, illustrator=False, draw_every=30):
+def new_member(chat, model, name, temperature=1.0, illustrator=False, draw_every=30, web=False):
     used = {m["color"] for m in chat["members"]}
     color = next((c for c in PALETTE if c not in used), PALETTE[len(chat["members"]) % len(PALETTE)])
     return {
@@ -54,6 +54,8 @@ def new_member(chat, model, name, temperature=1.0, illustrator=False, draw_every
         # Illustrators draw the chat instead of talking, every ~draw_every messages
         "illustrator": bool(illustrator),
         "draw_every": int(draw_every),
+        # Can search the web and open pages while replying (paid per search)
+        "web": bool(web),
     }
 
 

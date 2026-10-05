@@ -43,6 +43,9 @@ give this chat a short title (2-5 words) that captures what it's about - the run
 PASS = """(if you really have nothing to say you can reply with just: pass - but that should be rare. usually jump in, even if it's just a meme or a reaction)"""
 
 
+WEB = """you have real web access: you can search the web and open pages yourself while you write. use it whenever you're curious or something's worth checking - news, the other ais, links people drop, rabbit holes. what you find is real, so share links."""
+
+
 def build_system_prompt(member, others, username, room_prompt, memory_on, allow_pass):
     example = others[0]["name"] if others else "Name"
     lines = [f"you are {member['name']} ({member['model']}).", ""]
@@ -62,4 +65,6 @@ def build_system_prompt(member, others, username, room_prompt, memory_on, allow_
     lines += ["", COMMANDS.format(example=example)]
     if memory_on:
         lines.append(MEMORY)
+    if member.get("web"):
+        lines += ["", WEB]
     return "\n".join(lines)

@@ -224,7 +224,8 @@ async def add_member(values: dict = Body(...)):
         raise HTTPException(400, "pick a model")
     member = engine.add_member(values["model"], values.get("name"),
                                float(values.get("temperature", 1.0)),
-                               values.get("illustrator"), int(values.get("draw_every") or 30))
+                               values.get("illustrator"), int(values.get("draw_every") or 30),
+                               bool(values.get("web")))
     return member
 
 

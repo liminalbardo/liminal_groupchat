@@ -35,7 +35,8 @@ const STARTER_CAST = [
   ["openai/gpt-6-astra", "GPT 6 Astra"],
   ["openai/gpt-6-sol", "GPT 6 Sol"],
   ["openai/gpt-5.4-image-2", "GPT Image", { illustrator: true }],
-];
+].map(([model, name, extra]) => [model, name, extra || { web: true }]);
+const WEB_HELP = "Can search the web and open pages while replying, whenever it wants. Each search costs a little (counts towards the spend cap).";
 const MODE_HINTS = {
   natural: "whoever's likely to speak does; they can pass",
   everyone: "every AI sees every message and chooses (costs more)",
@@ -244,7 +245,8 @@ function renderMembers() {
         el("div", { class: "model" }, m.model),
         typing ? el("div", { class: "state typing" }, m.illustrator ? "drawing…" : "typing…")
           : m.muted ? el("div", { class: "state" }, "muted")
-          : m.illustrator ? el("div", { class: "state" }, `🎨 illustrator · every ~${m.draw_every || 30} msgs`) : null),
+          : m.illustrator ? el("div", { class: "state" }, `🎨 illustrator · every ~${m.draw_every || 30} msgs`)
+          : m.web ? el("div", { class: "state" }, "🌐 web access") : null),
     );
   }));
   if (!members().length) {
@@ -355,6 +357,8 @@ function messageEl(msg, prev) {
         !human && (m?.model || msg.model) ? el("span", { class: "model" }, shortModel(m?.model || msg.model)) : null,
         el("span", { class: "time", title: new Date(msg.ts * 1000).toLocaleString() }, timeOf(msg.ts))),
       whisperTag, body,
+      msg.sources?.length ? el("div", { class: "sources" }, "🌐", ...msg.sources.map((s) =>
+        el("a", { href: s.url, target: "_blank", rel: "noopener noreferrer", title: s.title || s.url }, hostOf(s.url)))) : null,
       reactions.length ? el("div", { class: "reactions" }, ...reactions.map(([emoji, who]) =>
         el("span", { class: "reaction", title: who.join(", ") }, emoji, who.length > 1 ? el("b", {}, who.length) : null))) : null,
     ));
@@ -607,6 +611,10 @@ async function loadModels() {
 const price = (m) => m.input == null ? "" : (m.input === 0 && m.output === 0) ? "free"
   : `$${m.input} in · $${m.output} out`;
 
+function hostOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
+}
+
 function prettyName(m) {
   return (m.name || m.id).replace(/^[^:]+:\s*/, "");
 }
@@ -619,18 +627,19 @@ async function addMember() {
     false, "Draws the chat instead of talking: an image every few messages, or when someone @'s them.");
   const every = el("input", { type: "number", min: 1, value: 30 });
   const everyField = field("Draws every ~N messages", every);
-  const syncIllo = () => (everyField.hidden = !illo.checked);
+  const [webRow, web] = toggleField("🌐 Web access", true, WEB_HELP);
+  const syncIllo = () => { everyField.hidden = !illo.checked; webRow.hidden = illo.checked; };
   illo.onchange = syncIllo;
   syncIllo();
   let chosen = null;
   const add = el("button", { class: "btn primary", disabled: true, onclick: async () => {
     await api("POST", "/api/members", { model: chosen.id, name: name.value.trim() || prettyName(chosen),
-      illustrator: illo.checked, draw_every: Math.max(1, parseInt(every.value || "30", 10)) });
+      illustrator: illo.checked, draw_every: Math.max(1, parseInt(every.value || "30", 10)), web: web.checked && !illo.checked });
     closeModal();
   } }, "Add to chat");
 
   openModal("Add someone", [search, list,
-    field("Nickname", name), illoRow, everyField], [add]);
+    field("Nickname", name), webRow, illoRow, everyField], [add]);
 
   let models;
   try { models = await loadModels(); } catch { list.replaceChildren(el("p", { class: "hint" }, "Couldn't load models from OpenRouter.")); return; }
@@ -687,8 +696,9 @@ function editMember(m) {
     "Draws the chat instead of talking: an image every few messages, or when someone @'s them.");
   const every = el("input", { type: "number", min: 1, value: m.draw_every || 30 });
   const everyField = field("Draws every ~N messages", every);
-  illo.onchange = () => (everyField.hidden = !illo.checked);
-  everyField.hidden = !illo.checked;
+  const [webRow, web] = toggleField("🌐 Web access", !!m.web, WEB_HELP);
+  illo.onchange = () => { everyField.hidden = !illo.checked; webRow.hidden = illo.checked; };
+  illo.onchange();
   const remove = el("button", { class: "btn danger", onclick: async () => {
     if (!confirm(`Remove ${m.name} from this chat?`)) return;
     await api("DELETE", `/api/members/${m.id}`);
@@ -697,7 +707,7 @@ function editMember(m) {
   const memoryBtn = el("button", { class: "btn", onclick: () => showMemory(m) }, "🧠 Memories");
   const save = el("button", { class: "btn primary", onclick: async () => {
     await api("PATCH", `/api/members/${m.id}`, { name: name.value.trim() || m.name, temperature: +temp.value, muted: muted.checked,
-      illustrator: illo.checked, draw_every: Math.max(1, parseInt(every.value || "30", 10)) });
+      illustrator: illo.checked, draw_every: Math.max(1, parseInt(every.value || "30", 10)), web: web.checked && !illo.checked });
     closeModal();
   } }, "Save");
   const picInput = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif", hidden: true });
@@ -726,7 +736,7 @@ function editMember(m) {
   openModal(m.name, [
     pic,
     el("div", { class: "row2" }, field("Name", name), tempField),
-    muteRow, illoRow, everyField,
+    muteRow, webRow, illoRow, everyField,
   ], [remove, state.settings.memory_enabled ? memoryBtn : null, el("span", { class: "spacer" }), save]);
 }
 
