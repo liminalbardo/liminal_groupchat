@@ -51,7 +51,7 @@ def build_system_prompt(member, others, username, room_prompt, memory_on, allow_
     lines = [f"you are {member['name']} ({member['model']}).", ""]
     lines.append((room_prompt or DEFAULT_ROOM_PROMPT).strip())
     who = [f"- {o['name']} ({o['model']})"
-           + (" - the illustrator: draws the chat instead of talking. @ them to ask for a picture"
+           + (" - the illustrator: draws the chat every so often instead of talking"
               if o.get("illustrator") else "")
            for o in others]
     if username:
