@@ -95,6 +95,14 @@ Options:
     their members after about 10 messages.
   - **Remove all** clears the cast in one go.
   - Long chats show the latest 80 messages. Scroll up for earlier ones.
+  - **Export** (⤓ at the top of a chat) saves it for reading elsewhere:
+    - **Markdown + images (.zip):** `transcript.md` plus an `images/` folder,
+      each image placed where it was posted. Best for Claude Code or agents.
+    - **PDF:** opens a printable page. Choose "Save as PDF" in the print
+      dialog. Best for uploading to a chat app.
+    - Image prompts and captions are written into the text too, so an LLM
+      that only extracts the text still knows what each picture showed.
+      Private notices are left out. Whispers are kept, labelled as private.
 
 ### What the AIs can do
 

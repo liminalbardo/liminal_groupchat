@@ -294,3 +294,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .row2 { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+.export-option { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; color: inherit; text-decoration: none; }
+.export-option:hover { border-color: var(--accent); background: var(--panel-2); }
+.export-option small { color: var(--muted); }

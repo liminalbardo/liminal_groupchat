@@ -577,6 +577,23 @@ function openSettings(firstRun = false) {
 }
 
 // Chat settings (per chat)
+// Export: a zip for LLMs and agents, or a page the browser saves as a PDF
+function openExport() {
+  const id = state.chat?.id;
+  if (!id) return;
+  const option = (title, text, href, extra) => el("a", { class: "export-option", href, ...extra, onclick: () => setTimeout(closeModal, 100) },
+    el("b", {}, title), el("small", {}, text));
+  openModal("Export this chat", [
+    option("Markdown + images (.zip)",
+      "transcript.md with every image in an images/ folder, placed where it was posted. Best for Claude Code, agents, or anything that reads a folder.",
+      `/api/chats/${id}/export.zip`, { download: "" }),
+    option("PDF",
+      "Opens a printable page: choose “Save as PDF” in the print dialog. Best for uploading to a chat app.",
+      `/export/${id}`, { target: "_blank", rel: "noopener" }),
+    el("p", { class: "hint" }, "Image prompts and captions are written into the text too, so an LLM that only reads the text still knows what each picture showed."),
+  ], null);
+}
+
 function openChatSettings() {
   const cs = state.chat.settings;
   const mode = el("select", {}, ...Object.keys(MODE_HINTS).map((v) =>
@@ -876,6 +893,7 @@ function wire() {
   $("#new-chat").onclick = () => { api("POST", "/api/chats"); closeDrawers(); };
   $("#open-settings").onclick = () => openSettings();
   $("#open-chat-settings").onclick = openChatSettings;
+  $("#open-export").onclick = openExport;
   $("#add-member").onclick = addMember;
   $("#remove-all").onclick = () => {
     const n = members().length;

@@ -962,3 +962,50 @@ def test_stream_chat_sends_web_tools_and_collects_citations():
     assert sources == [{"url": "https://a.example/x", "title": "A"}], "deduped, http(s) only"
     assert uses == {"searches": 2, "fetches": 1}
     assert "tools" not in seen["body"], "no web tools unless asked"
+
+
+def test_export_zip_and_page():
+    import io as _io
+    import zipfile
+    from PIL import Image
+    from gchat import export, images
+    eng, _ = fresh(Script())
+    one = eng.add_member("a/one", "One")
+    two = eng.add_member("b/two", "Two")
+    os.makedirs(settings.MEDIA_DIR, exist_ok=True)
+    Image.new("RGB", (2000, 1000), "red").save(os.path.join(settings.MEDIA_DIR, "big.png"))
+    eng._new_message("text", one["id"], "look at <this> 💀", reactions={"💀": ["Two"]},
+                     sources=[{"url": "https://example.org/x", "title": "X"}])
+    eng._new_message("image", two["id"], "a red rectangle, obviously", image="big.png", prompt="a red rectangle")
+    eng._new_message("image", two["id"], "", image="gone.png", prompt="lost")
+    eng._new_message("whisper", one["id"], "psst", to=two["id"])
+    eng._notice("couldn't reply: boom", private=True)
+    eng._notice("Two joined the chat")
+    eng.update_chat(title="Red Rectangle Saga")
+
+    z = zipfile.ZipFile(_io.BytesIO(export.zip_bytes(eng.chat)))
+    assert sorted(z.namelist()) == ["images/0001.jpg", "transcript.md"]
+    assert max(Image.open(_io.BytesIO(z.read("images/0001.jpg"))).size) == images.MODEL_SIDE
+    md = z.read("transcript.md").decode()
+    assert md.startswith("# Red Rectangle Saga") and "- One (a/one)" in md
+    assert "**One (a/one)** · " in md and "look at <this> 💀" in md and "Reactions: 💀 Two" in md
+    assert "Sources: https://example.org/x" in md
+    assert '![Two posted an image: "a red rectangle"](images/0001.jpg)' in md
+    assert '[image 1: Two posted an image: "a red rectangle"]' in md, "the prompt survives text-only reading"
+    assert "> a red rectangle, obviously" in md and "lost" not in md, "missing images are skipped"
+    assert "→ whispered privately to **Two**" in md
+    assert "Two joined the chat" in md and "boom" not in md, "private notices stay out"
+
+    page = export.page(eng.chat)
+    assert "look at &lt;this&gt; 💀" in page and "<this>" not in page
+    assert "src='/thumbs/big.png'" in page and "print" in page
+
+    from fastapi.testclient import TestClient
+    from gchat import server
+    server.engine = eng
+    with TestClient(server.app, base_url="http://localhost") as c:
+        r = c.get(f"/api/chats/{eng.chat['id']}/export.zip")
+        assert r.status_code == 200 and 'filename="red-rectangle-saga.zip"' in r.headers["content-disposition"]
+        assert c.get(f"/export/{eng.chat['id']}").status_code == 200
+        assert c.get("/export/nope").status_code == 404
+        assert c.get("/export/..%2Fsettings").status_code == 404

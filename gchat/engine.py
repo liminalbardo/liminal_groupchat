@@ -151,6 +151,12 @@ class Engine:
             error = str(e)
         self._call_on_loop(self._save_result, error)
 
+    def get_chat(self, chat_id):
+        """A chat by ID, for reading: the open one as it is now, else from disk."""
+        if self.chat and self.chat["id"] == chat_id:
+            return self.chat
+        return self._load(chat_id)
+
     def _load(self, chat_id):
         """Read a chat from disk after any saves still queued for it."""
         return self._writer.submit(store.load, chat_id).result()

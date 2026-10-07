@@ -6,10 +6,10 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import images, llm, settings
+from . import export, images, llm, settings
 from .engine import Engine
 
 WEB_DIR = os.path.join(settings.APP_DIR, "web")
@@ -180,6 +180,31 @@ async def rename_chat(chat_id: str, values: dict = Body(...)):
 async def update_chat(values: dict = Body(...)):
     engine.update_chat(values.get("title"), values.get("settings"))
     return {"ok": True}
+
+
+def _chat_or_404(chat_id):
+    try:
+        chat = engine.get_chat(chat_id)
+    except ValueError:
+        chat = None
+    if not chat:
+        raise HTTPException(404, "no such chat")
+    return chat
+
+
+@app.get("/api/chats/{chat_id}/export.zip")
+async def export_zip(chat_id: str):
+    """transcript.md plus its images, for LLMs and agents."""
+    chat = _chat_or_404(chat_id)
+    data = await asyncio.to_thread(export.zip_bytes, chat)
+    return Response(data, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="{export.slug(chat)}.zip"'})
+
+
+@app.get("/export/{chat_id}")
+async def export_page(chat_id: str):
+    """A print-ready page of the chat: the browser saves it as a PDF."""
+    return HTMLResponse(export.page(_chat_or_404(chat_id)))
 
 
 @app.delete("/api/chats/{chat_id}")
