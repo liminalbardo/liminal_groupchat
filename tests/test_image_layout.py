@@ -25,8 +25,19 @@ class ImageLayoutTests(unittest.TestCase):
     def test_ratios_match_served_thumbnails(self):
         for name, size in (("wide.png", (1600, 901)), ("tall.png", (451, 900)), ("small.gif", (90, 160))):
             Image.new("RGB", size).save(self.media / name)
+            width, height = images.dimensions(name)
+            self.assertEqual((width, height), size)
             with Image.open(images.thumbnail(name)) as thumbnail:
-                self.assertEqual(images.dimensions(name), thumbnail.size)
+                tw, th = thumbnail.size
+            self.assertAlmostEqual(width / height, tw / th, delta=0.01)
+
+    def test_dimensions_never_make_thumbnails(self):
+        # Snapshots ask for every image's size on the event loop: that must
+        # stay a header read, not a resize
+        Image.new("RGB", (3000, 2000)).save(self.media / "big.png")
+        self.assertEqual(images.dimensions("big.png"), (3000, 2000))
+        thumbs = Path(images.thumbs_dir())
+        self.assertFalse(thumbs.exists() and any(thumbs.iterdir()))
 
     def test_missing_and_invalid_images_have_no_dimensions(self):
         (self.media / "broken.png").write_text("invalid")

@@ -35,7 +35,13 @@ def source_path(name):
 
 
 def dimensions(name):
-    path = thumbnail(name)
+    """(width, height) of a media image, for reserving its space in the chat.
+
+    Read from the original's header (Pillow doesn't decode the pixels), so
+    it's quick and never makes a thumbnail: snapshots call this for every
+    image in a chat, on the event loop. A thumbnail has the same shape.
+    """
+    path = source_path(name)
     if not path or Image is None:
         return None
     try:
